@@ -1,0 +1,39 @@
+.admin-topbar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 75px;
+    width: calc(100% - 263px);
+    display: block;
+    z-index: 1;
+    background: #fff;
+    box-shadow: 0 0 35px 0 rgba(154,161,171,.15);
+    padding-right: 50px;
+  }
+
+  .rounded-circle {
+    border-radius: 50% !important;
+  }
+
+  .topBarText{
+    float: right;
+    font-size: 15px;
+    margin-right: 40px;
+    padding-left: 20px;
+    padding-right: 20px;
+    border: 1px solid #fafbfd;
+    background-color: #fafbfd;
+    color: #98a6ad;
+    height: 75px;
+    line-height: 75px;
+  }
+
+  .teamNameBox{
+    float: right;
+    width: 15%;
+    text-align: center;
+    line-height: 50px;
+    border: 1px solid black;
+    height: 75px;
+    background-color: #fffff0
+  }

@@ -1,0 +1,57 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "cancelledAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "optIn",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "subtotal",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "total",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "financialStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "optIn",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides":
+  [
+    {
+      "collectionGroup": "alerts_orphanedOrders",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
+}

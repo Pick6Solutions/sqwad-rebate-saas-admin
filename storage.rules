@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to read and create in the 'images' path
+    match /images/{imagePath=**} {
+      allow create: if request.auth != null;
+      allow get: if true;
+      allow delete, update, list: if false;
+    }
+
+    // Block access to all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

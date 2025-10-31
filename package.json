@@ -1,0 +1,72 @@
+{
+  "name": "rebate_admin",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@tiptap/core": "^3.9.1",
+    "@tiptap/extension-bold": "^3.9.1",
+    "@tiptap/extension-document": "^3.9.1",
+    "@tiptap/extension-hard-break": "^3.9.1",
+    "@tiptap/extension-image": "^3.9.1",
+    "@tiptap/extension-italic": "^3.9.1",
+    "@tiptap/extension-link": "^3.9.1",
+    "@tiptap/extension-paragraph": "^3.9.1",
+    "@tiptap/extension-placeholder": "^3.9.1",
+    "@tiptap/extension-text": "^3.9.1",
+    "@tiptap/extension-text-align": "^3.9.1",
+    "@tiptap/extension-text-style": "^3.9.1",
+    "@tiptap/extension-underline": "^3.9.1",
+    "@tiptap/react": "^3.9.1",
+    "@tiptap/starter-kit": "^3.9.1",
+    "bootstrap": "^5.3.8",
+    "firebase": "^12.4.0",
+    "is-valid-domain": "^0.1.6",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.0",
+    "react-color": "^2.19.3",
+    "react-datepicker": "^8.8.0",
+    "react-dom": "^19.2.0",
+    "react-dropzone": "^14.3.8",
+    "react-player": "^3.3.3",
+    "react-responsive-carousel": "^3.2.23",
+    "react-router-dom": "^7.9.5",
+    "react-sanfona": "^1.5.0",
+    "react-spinners": "^0.17.0",
+    "reactstrap": "^9.2.3",
+    "simple-flexbox": "^2.3.3",
+    "sweetalert2": "^11.26.3"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "start": "PORT=3006 react-scripts start",
+    "start:functions": "firebase use sqwad-rebate-app && env-cmd -f ./.env.development yarn set-env && firebase emulators:start --only functions",
+    "build": "export file_path=./.env && yarn deploy-default",
+    "test": "react-scripts test --env=jsdom",
+    "eject": "react-scripts eject",
+    "set-env": "node setEnv.js",
+    "deploy-default": "yarn prepare-for-deploy && yarn set-env && firebase deploy --only hosting && yarn deploy-default-functions",
+    "prepare-for-deploy": "env-cmd -f $file_path -x react-scripts build && yarn set-project && yarn set-project",
+    "set-project": "env-cmd -f $file_path -x firebase use \\$REACT_APP_FIREBASE_PROJECT_ID && env-cmd -f $file_path -x firebase functions:config:set envvariables.database=\\$REACT_APP_FIREBASE_DATABASE",
+    "deploy-default-functions": "env-cmd -f $file_path yarn set-env && firebase deploy --only functions:remoteScheduledCheck,functions:api",
+    "build:dev": "export file_path=./.env.development && yarn deploy-default"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "env-cmd": "^11.0.0",
+    "react-scripts": "^5.0.1",
+    "yarn-upgrade-all": "^0.7.5"
+  }
+}

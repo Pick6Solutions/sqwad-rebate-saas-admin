@@ -4,3 +4,5 @@ yarn.lock\
 .env.*
 .env
 .env.development
+build
+.firebase

@@ -43,6 +43,28 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "excluded",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "optIn",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides":

@@ -17,7 +17,7 @@ import {
     startAfter,
     updateDoc,
 } from 'firebase/firestore';
-import { db } from '../../base';
+import { db, auth } from '../../base';
 
 const fmtCurrency = (n) => `$${(Number(n || 0)).toFixed(2)}`;
 const fmtDate = (ts) => {
@@ -36,6 +36,15 @@ const chunk = (arr, size) => {
 // Helpers to build ISO day boundaries (createdAt is stored as ISO string)
 const toISOStartOfDay = (ymd) => (ymd ? new Date(`${ymd}T00:00:00.000Z`).toISOString() : null);
 const toISOEndOfDay = (ymd) => (ymd ? new Date(`${ymd}T23:59:59.999Z`).toISOString() : null);
+
+const SHOPIFY_SERVICE_URL = (process.env.REACT_APP_SHOPIFY_SERVICE_URL || '').replace(/\/$/, '');
+const CREDIT_WINNERS_URL = SHOPIFY_SERVICE_URL ? `${SHOPIFY_SERVICE_URL}/api/credit-winners` : '/api/credit-winners';
+
+async function getIdTokenOrThrow() {
+    const user = auth.currentUser;
+    if (!user) throw new Error('You must be signed in to perform this action.');
+    return user.getIdToken();
+}
 
 function OrdersViewer() {
     const { shopId } = useParams();
@@ -212,10 +221,25 @@ function OrdersViewer() {
                 subtotal: Number(o.currentSubtotal ?? o.subtotal ?? 0),
                 currencyCode: o.currencyCode || o.currentSubtotalCurrency || o.currency || 'USD',
             }));
-            const res = await fetch(`/api/credit-winners`, {
+
+            const uniqueCustomers = new Set(
+                selected.map(o => o.customerId || o.customer?.id).filter(Boolean)
+            );
+            const customerIdSent = uniqueCustomers.size === 1 ? [...uniqueCustomers][0] : undefined;
+
+            const idToken = await getIdTokenOrThrow();
+
+            const res = await fetch(CREDIT_WINNERS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orders: payload }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${idToken}`
+                },
+                body: JSON.stringify(
+                    customerIdSent
+                        ? { customerIdSent, orders: payload, shopId }
+                        : { orders: payload, shopId }
+                ),
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json?.error || 'Failed to grant credit');
@@ -294,12 +318,16 @@ function OrdersViewer() {
 
             let totalProcessed = 0;
             let totalFailures = 0;
+            const idToken = await getIdTokenOrThrow();
 
             for (const batch of chunk(payloads, API_BATCH)) {
-                const res = await fetch(`/api/credit-winners`, {
+                const res = await fetch(CREDIT_WINNERS_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ orders: batch }),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({ orders: batch, shopId }),
                 });
                 const json = await res.json();
                 if (!res.ok) {

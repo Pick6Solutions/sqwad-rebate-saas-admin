@@ -42,7 +42,7 @@
   "scripts": {
     "start": "PORT=3006 react-scripts start",
     "start:functions": "firebase use sqwad-rebate-app && env-cmd -f ./.env.development yarn set-env && firebase emulators:start --only functions",
-    "build": "export file_path=./.env && yarn deploy-default",
+    "build": "export file_path=./.env && yarn prepare-for-deploy && yarn set-env && firebase deploy --only hosting",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject",
     "set-env": "node setEnv.js",

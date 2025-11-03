@@ -1,6 +1,14 @@
 {
   "projects": {},
-  "targets": {},
+  "targets": {
+    "sqwad-rebate-app": {
+      "hosting": {
+        "dev": [
+          "sqwad-rebate-app-admin"
+        ]
+      }
+    }
+  },
   "etags": {},
   "dataconnectEmulatorConfig": {}
 }

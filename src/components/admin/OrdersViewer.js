@@ -26,6 +26,24 @@ const fmtDate = (ts) => {
     return isNaN(d.getTime()) ? '' : d.toLocaleString();
 };
 
+const toDateSafe = (ts) => {
+    if (!ts) return null;
+    if (ts instanceof Date) return ts;
+    if (ts?.seconds) return new Date(ts.seconds * 1000);
+    const attempt = new Date(ts);
+    return isNaN(attempt.getTime()) ? null : attempt;
+};
+
+const describeGameStatus = (startAt, endAt) => {
+    const start = toDateSafe(startAt);
+    const end = toDateSafe(endAt);
+    if (!start || !end) return { label: 'Unscheduled', className: 'badge-secondary' };
+    const now = Date.now();
+    if (now < start.getTime()) return { label: 'Upcoming', className: 'badge-info' };
+    if (now > end.getTime()) return { label: 'Completed', className: 'badge-secondary' };
+    return { label: 'Active', className: 'badge-success' };
+};
+
 // Simple chunker for batching POSTs
 const chunk = (arr, size) => {
     const out = [];
@@ -47,7 +65,7 @@ async function getIdTokenOrThrow() {
 }
 
 function OrdersViewer() {
-    const { shopId } = useParams();
+    const { shopId, gameId } = useParams();
     const navigate = useNavigate();
 
     // Redirect to SetUpShop (list) if no shopId
@@ -55,9 +73,15 @@ function OrdersViewer() {
         if (!shopId) navigate('/setupshop', { replace: true });
     }, [shopId, navigate]);
 
-    // Single shop header (name/status)
+    useEffect(() => {
+        if (!shopId || gameId) return;
+        navigate(`/shops/${encodeURIComponent(shopId)}`, { replace: true });
+    }, [shopId, gameId, navigate]);
+
+    // Single shop + game header (name/status)
     const [loading, setLoading] = useState(true);
     const [shop, setShop] = useState(null);
+    const [game, setGame] = useState(null);
 
     const shopDocRef = useMemo(() => (shopId ? doc(db, 'shops', shopId) : null), [shopId]);
     useEffect(() => {
@@ -80,6 +104,30 @@ function OrdersViewer() {
         return () => unsub();
     }, [shopDocRef, navigate]);
 
+    const gameDocRef = useMemo(
+        () => (shopId && gameId ? doc(db, 'shops', shopId, 'games', gameId) : null),
+        [shopId, gameId]
+    );
+    useEffect(() => {
+        if (!gameDocRef) return;
+        setLoading(true);
+        const unsub = onSnapshot(
+            gameDocRef,
+            (snap) => {
+                if (!snap.exists()) {
+                    setGame(null);
+                    setLoading(false);
+                    navigate(`/shops/${encodeURIComponent(shopId)}`, { replace: true });
+                    return;
+                }
+                setGame({ id: snap.id, ...snap.data() });
+                setLoading(false);
+            },
+            () => setLoading(false)
+        );
+        return () => unsub();
+    }, [gameDocRef, navigate, shopId]);
+
     // -------- Orders table (optIn == true, financialStatus == 'PAID') --------
     const PAGE_SIZE = 50;
     const API_BATCH = 75; // batch size for POST /api/credit-winners
@@ -91,8 +139,8 @@ function OrdersViewer() {
     const [lastDoc, setLastDoc] = useState(null);
 
     const baseOrdersCol = useMemo(() => {
-        return shopId ? collection(db, 'shops', shopId, 'orders') : null;
-    }, [shopId]);
+        return shopId && gameId ? collection(db, 'shops', shopId, 'games', gameId, 'orders') : null;
+    }, [shopId, gameId]);
 
     // Tabs: Active vs Excluded
     const [activeTab, setActiveTab] = useState('active'); // 'active' | 'excluded'
@@ -132,7 +180,7 @@ function OrdersViewer() {
 
     const loadPage = useCallback(
         async (cursor = null, pushCursor = false) => {
-            if (!shopId || !baseOrdersCol) return;
+            if (!shopId || !gameId || !baseOrdersCol) return;
             setFetching(true);
             try {
                 const qy = makeQuery(cursor);
@@ -158,22 +206,22 @@ function OrdersViewer() {
                 setFetching(false);
             }
         },
-        [shopId, baseOrdersCol, makeQuery, activeTab]
+        [shopId, gameId, baseOrdersCol, makeQuery, activeTab]
     );
 
     // Initial load & when shop/tab changes
     useEffect(() => {
         setCursorStack([]);
         setLastDoc(null);
-        if (shopId) loadPage(null, false);
-    }, [shopId, activeTab, loadPage]);
+        if (shopId && gameId) loadPage(null, false);
+    }, [shopId, gameId, activeTab, loadPage]);
 
     // Reset to page 1 when date filters change
     useEffect(() => {
         setCursorStack([]);
         setLastDoc(null);
-        if (shopId) loadPage(null, false);
-    }, [shopId, fromDate, toDate, loadPage]);
+        if (shopId && gameId) loadPage(null, false);
+    }, [shopId, gameId, fromDate, toDate, loadPage]);
 
     const onNext = () => {
         if (hasMore && lastDoc) loadPage(lastDoc, true);
@@ -205,7 +253,7 @@ function OrdersViewer() {
     // --- grant credit for selected (optimistic mark + refresh) ---
     const [granting, setGranting] = useState(false);
     const onGrantCredit = async () => {
-        if (!anySelected || !shopId) return;
+        if (!anySelected || !shopId || !gameId) return;
         setGranting(true);
         const ids = new Set(selected.map((o) => o.id));
 
@@ -235,11 +283,11 @@ function OrdersViewer() {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${idToken}`
                 },
-                body: JSON.stringify(
-                    customerIdSent
-                        ? { customerIdSent, orders: payload, shopId }
-                        : { orders: payload, shopId }
-                ),
+                    body: JSON.stringify(
+                        customerIdSent
+                            ? { customerIdSent, orders: payload, shopId, gameId }
+                            : { orders: payload, shopId, gameId }
+                    ),
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json?.error || 'Failed to grant credit');
@@ -269,6 +317,7 @@ function OrdersViewer() {
     const [grantAllProgress, setGrantAllProgress] = useState({ scanned: 0, sent: 0, failures: 0 });
 
     const fetchAllEligibleOrders = useCallback(async () => {
+        if (!shopId || !gameId || !baseOrdersCol) return [];
         const all = [];
         let cursor = null;
         const MAX_PAGES = 2000; // safety
@@ -284,10 +333,10 @@ function OrdersViewer() {
             setGrantAllProgress((p) => ({ ...p, scanned: all.length }));
         }
         return all.filter((o) => o.credited !== true && o.excluded !== true);
-    }, [makeQuery, activeTab]);
+    }, [shopId, gameId, baseOrdersCol, makeQuery, activeTab]);
 
     const onGrantAll = async () => {
-        if (!shopId || grantingAll || activeTab !== 'active') return;
+        if (!shopId || !gameId || grantingAll || activeTab !== 'active') return;
         const confirmMsg =
             'This will credit ALL non-credited, non-excluded, opt-in, PAID orders for this shop (within the current date filters).\n\nProceed?';
         if (!window.confirm(confirmMsg)) return;
@@ -327,7 +376,7 @@ function OrdersViewer() {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${idToken}`
                     },
-                    body: JSON.stringify({ orders: batch, shopId }),
+                    body: JSON.stringify({ orders: batch, shopId, gameId }),
                 });
                 const json = await res.json();
                 if (!res.ok) {
@@ -357,7 +406,7 @@ function OrdersViewer() {
     const [deletingBulk, setDeletingBulk] = useState(false);
 
     const onExcludeOrder = async (o) => {
-        if (!shopId || !o?.id) return;
+        if (!shopId || !gameId || !o?.id) return;
         if (o.credited) {
             alert('This order was already credited and cannot be excluded here.');
             return;
@@ -380,7 +429,7 @@ function OrdersViewer() {
         });
 
         try {
-            await updateDoc(doc(db, 'shops', shopId, 'orders', o.id), {
+            await updateDoc(doc(db, 'shops', shopId, 'games', gameId, 'orders', o.id), {
                 excluded: true,
                 excludedAt: now,
             });
@@ -401,7 +450,7 @@ function OrdersViewer() {
     };
 
     const onRestoreOrder = async (o) => {
-        if (!shopId || !o?.id) return;
+        if (!shopId || !gameId || !o?.id) return;
 
         setDeletingId(o.id);
         const prev = o;
@@ -415,7 +464,7 @@ function OrdersViewer() {
         });
 
         try {
-            await updateDoc(doc(db, 'shops', shopId, 'orders', o.id), {
+            await updateDoc(doc(db, 'shops', shopId, 'games', gameId, 'orders', o.id), {
                 excluded: false,
                 excludedAt: null,
             });
@@ -433,7 +482,7 @@ function OrdersViewer() {
     };
 
     const onExcludeSelected = async () => {
-        if (!shopId || selected.length === 0) return;
+        if (!shopId || !gameId || selected.length === 0) return;
         const count = selected.length;
         if (!window.confirm(`Exclude ${count} selected order(s) from SQWAD crediting?`)) return;
 
@@ -455,7 +504,7 @@ function OrdersViewer() {
             for (const group of chunk(selected, 50)) {
                 await Promise.all(
                     group.map((o) =>
-                        updateDoc(doc(db, 'shops', shopId, 'orders', o.id), {
+                        updateDoc(doc(db, 'shops', shopId, 'games', gameId, 'orders', o.id), {
                             excluded: true,
                             excludedAt: now,
                         })
@@ -476,7 +525,7 @@ function OrdersViewer() {
 
     const onRestoreSelected = async () => {
         const toRestore = orders.filter((o) => o._selected && o.excluded === true);
-        if (!shopId || toRestore.length === 0) return;
+        if (!shopId || !gameId || toRestore.length === 0) return;
         if (!window.confirm(`Restore ${toRestore.length} selected order(s) to Active?`)) return;
 
         setDeletingBulk(true);
@@ -496,7 +545,7 @@ function OrdersViewer() {
             for (const group of chunk(toRestore, 50)) {
                 await Promise.all(
                     group.map((o) =>
-                        updateDoc(doc(db, 'shops', shopId, 'orders', o.id), {
+                        updateDoc(doc(db, 'shops', shopId, 'games', gameId, 'orders', o.id), {
                             excluded: false,
                             excludedAt: null,
                         })
@@ -514,6 +563,8 @@ function OrdersViewer() {
         }
     };
 
+    const gameStatus = game ? describeGameStatus(game.startAt, game.endAt) : null;
+
     return (
         <div className="admin-wrapper">
             <div className="loading-screen" style={{ display: loading ? 'block' : 'none' }} />
@@ -523,8 +574,13 @@ function OrdersViewer() {
             <div className="admin-main-panel">
                 <div className="card">
                     <div className="card-body">
-                        <button className="btn btn-light mb-3" onClick={() => navigate('/shops')}>
-                            ← Back to Shops
+                        <button
+                            className="btn btn-light mb-3"
+                            onClick={() =>
+                                shopId ? navigate(`/shops/${encodeURIComponent(shopId)}`) : navigate('/shops')
+                            }
+                        >
+                            ← Back to Shop
                         </button>
 
                         {shop && (
@@ -539,6 +595,20 @@ function OrdersViewer() {
                     {shop.active ? 'Active' : 'Inactive'}
                   </span>
                                 </p>
+
+                                {game && (
+                                    <div className="mb-3">
+                                        <p style={{ marginBottom: 4 }}>
+                                            <strong>Game:</strong> {game.name || game.gameName || 'Untitled game'}
+                                        </p>
+                                        <p style={{ marginBottom: 4 }}>
+                                            <strong>Schedule:</strong> {fmtDate(game.startAt)} &mdash; {fmtDate(game.endAt)}
+                                        </p>
+                                        {gameStatus && (
+                                            <span className={`badge ${gameStatus.className}`}>{gameStatus.label}</span>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Tabs */}
                                 <div className="d-flex align-items-center mb-3">

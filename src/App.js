@@ -164,11 +164,11 @@ export default function App() {
         />
 
         <Route
-          path="/shops/:shopId/orders"
+          path="/shops/:shopId/games/:gameId/orders"
           element={
-              <AuthenticatedAdminRoute authenticated={authenticated}>
-                  <OrdersViewer />
-              </AuthenticatedAdminRoute>
+            <AuthenticatedAdminRoute authenticated={authenticated}>
+              <OrdersViewer />
+            </AuthenticatedAdminRoute>
           }
         />
 

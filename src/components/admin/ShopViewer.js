@@ -3,11 +3,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SideMenu from '../admin/SideMenu';
 import TopMenu from '../admin/TopBar';
+import ShopGames from './ShopGames';
 import '../../styles/css/AdminMain.css';
 
 import {
     collection,
     doc,
+    getDocs,
     onSnapshot,
     query,
     where,
@@ -57,40 +59,56 @@ function ShopViewer() {
         return () => unsub();
     }, [shopDocRef, navigate]);
 
-    // Aggregates for orders + counts
+    // Aggregates for orders + counts across all games
     useEffect(() => {
         if (!shopId) return;
         (async () => {
-            const ordersCol = collection(db, 'shops', shopId, 'orders');
+            try {
+                const gamesSnap = await getDocs(collection(db, 'shops', shopId, 'games'));
+                if (gamesSnap.empty) {
+                    setMoney({ ordersCount: 0, subtotal: 0, gross: 0, gmvNet: 0, grossNet: 0 });
+                    return;
+                }
 
-            const paidOrdersQ = query(
-                ordersCol,
-                where('financialStatus', '==', 'PAID'),
-                where('cancelledAt', '==', null),
-                where('optIn', '==', true)
-            );
+                const aggPromises = gamesSnap.docs.map((gameDoc) => {
+                    const ordersCol = collection(db, 'shops', shopId, 'games', gameDoc.id, 'orders');
+                    const paidOrdersQ = query(
+                        ordersCol,
+                        where('financialStatus', '==', 'PAID'),
+                        where('cancelledAt', '==', null),
+                        where('optIn', '==', true)
+                    );
+                    return getAggregateFromServer(paidOrdersQ, {
+                        subtotal: sum('subtotal'),
+                        gross: sum('total'),
+                        ordersCount: count(),
+                    });
+                });
 
-            const agg = await getAggregateFromServer(paidOrdersQ, {
-                subtotal:         sum('subtotal'),
-                gross:       sum('total'),
-                ordersCount: count(),
-            });
+                const aggResults = await Promise.all(aggPromises);
+                const totals = aggResults.reduce(
+                    (acc, agg) => {
+                        const data = agg.data();
+                        acc.ordersCount += data.ordersCount || 0;
+                        acc.subtotal += data.subtotal || 0;
+                        acc.gross += data.gross || 0;
+                        return acc;
+                    },
+                    { ordersCount: 0, subtotal: 0, gross: 0 }
+                );
 
-            const data = agg.data();
-            const subtotal = data.subtotal || 0;
-            const gross = data.gross || 0;
-
-            setMoney({
-                ordersCount: data.ordersCount || 0,
-                subtotal,
-                gross,
-            });
+                setMoney((prev) => ({
+                    ...prev,
+                    ordersCount: totals.ordersCount,
+                    subtotal: totals.subtotal,
+                    gross: totals.gross,
+                }));
+            } catch (err) {
+                console.error('Failed to aggregate orders', err);
+                setMoney((prev) => ({ ...prev, ordersCount: 0, subtotal: 0, gross: 0 }));
+            }
         })();
     }, [shopId]);
-
-    function goToAllOrders() {
-        navigate(`/shops/${encodeURIComponent(shopId)}/orders`, { replace: false });
-    }
 
     return (
         <div className="admin-wrapper">
@@ -122,7 +140,6 @@ function ShopViewer() {
                                             <div className="card-body">
                                                 <h5>Orders</h5>
                                                 <p style={{ fontSize: 24, margin: 0 }}>{money.ordersCount}</p>
-                                                <button type="button" onClick={() => goToAllOrders()} className="btn btn-dark">View All</button>
                                             </div>
                                         </div>
                                     </div>
@@ -141,6 +158,7 @@ function ShopViewer() {
                                         </div></div>
                                     </div>
                                 </div>
+                                <ShopGames shopId={shop.id} />
                             </>
                         )}
 

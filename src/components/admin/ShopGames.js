@@ -6,12 +6,15 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   Timestamp,
   updateDoc,
+  where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../base';
 import DatePicker from '../utils/DatePicker';
@@ -41,6 +44,7 @@ function deriveStatus(game) {
   const { scheduleStatus, active, startAt, endAt } = game;
   const status = scheduleStatus || (active ? 'active' : null);
   if (status === 'active') return { label: 'Active', className: 'badge-success' };
+  if (status === 'inactive') return { label: 'Inactive', className: 'badge-secondary' };
   if (status === 'upcoming') return { label: 'Upcoming', className: 'badge-info' };
   if (status === 'completed') return { label: 'Completed', className: 'badge-secondary' };
   if (!startAt || !endAt) return { label: 'Unscheduled', className: 'badge-secondary' };
@@ -73,6 +77,7 @@ function ShopGames({ shopId }) {
   const [startAt, setStartAt] = useState(null);
   const [endAt, setEndAt] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [activationStatus, setActivationStatus] = useState(null);
   const navigate = useNavigate();
 
   const gamesCol = useMemo(() => (shopId ? collection(db, 'shops', shopId, 'games') : null), [shopId]);
@@ -171,6 +176,26 @@ function ShopGames({ shopId }) {
       });
       return;
     }
+    const now = new Date();
+    if (startAt < now) {
+      ErrorMessage.fire({
+        title: 'Past Schedule',
+        text: 'Start time must be in the future.',
+      });
+      return;
+    }
+    const overlap = games.some((existing) => {
+      if (editingGame && existing.id === editingGame.id) return false;
+      if (!(existing.startAt instanceof Date) || !(existing.endAt instanceof Date)) return false;
+      return startAt < existing.endAt && endAt > existing.startAt;
+    });
+    if (overlap) {
+      ErrorMessage.fire({
+        title: 'Schedule Conflict',
+        text: 'These times overlap another game. Pick a different window.',
+      });
+      return;
+    }
 
     try {
       setSaving(true);
@@ -236,6 +261,59 @@ function ShopGames({ shopId }) {
     }
   };
 
+  const setGameActive = async (game, shouldActivate) => {
+    if (!game?.id || !shopId) {
+      ErrorMessage.fire({
+        title: 'Missing info',
+        text: 'Reload and try again.',
+      });
+      return;
+    }
+
+    try {
+      setActivationStatus({ id: game.id, mode: shouldActivate ? 'activate' : 'deactivate' });
+      const targetRef = doc(db, 'shops', shopId, 'games', game.id);
+
+      if (shouldActivate) {
+        const batch = writeBatch(db);
+        const activeSnap = await getDocs(query(gamesCol, where('active', '==', true)));
+
+        activeSnap.forEach((docSnap) => {
+          if (docSnap.id === game.id) return;
+          batch.update(docSnap.ref, {
+            active: false,
+            scheduleStatus: 'inactive',
+            updatedAt: serverTimestamp(),
+          });
+        });
+
+        batch.update(targetRef, {
+          active: true,
+          scheduleStatus: 'active',
+          updatedAt: serverTimestamp(),
+        });
+
+        await batch.commit();
+        Toast.fire({ title: 'Game marked active' });
+      } else {
+        await updateDoc(targetRef, {
+          active: false,
+          scheduleStatus: 'inactive',
+          updatedAt: serverTimestamp(),
+        });
+        Toast.fire({ title: 'Game set inactive' });
+      }
+    } catch (e) {
+      console.error('Failed to toggle game activity', e);
+      ErrorMessage.fire({
+        title: 'Could not update game',
+        text: 'Please try again.',
+      });
+    } finally {
+      setActivationStatus(null);
+    }
+  };
+
   return (
     <div className="card mt-4">
       <div className="card-body">
@@ -268,9 +346,35 @@ function ShopGames({ shopId }) {
                   <p style={{ marginBottom: 4 }}>
                     {formatDate(game.startAt)} &mdash; {formatDate(game.endAt)}
                   </p>
-                  <span className={`badge ${status.className}`}>{status.label}</span>
+                  <div style={{ marginBottom: 4 }}>
+                    <span className={`badge ${status.className}`}>{status.label}</span>
+                    <small style={{ marginLeft: 8, color: game.active ? '#198754' : '#6c757d' }}>
+                      {game.active ? 'Active now' : 'Inactive'}
+                    </small>
+                  </div>
                 </div>
                 <div className="btn-group mt-2 mt-md-0">
+                  {!game.active ? (
+                    <button
+                      className="btn btn-outline-success btn-sm"
+                      onClick={() => setGameActive(game, true)}
+                      disabled={activationStatus?.id === game.id}
+                    >
+                      {activationStatus?.id === game.id && activationStatus.mode === 'activate'
+                        ? 'Activating…'
+                        : 'Set Active'}
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-outline-warning btn-sm"
+                      onClick={() => setGameActive(game, false)}
+                      disabled={activationStatus?.id === game.id}
+                    >
+                      {activationStatus?.id === game.id && activationStatus.mode === 'deactivate'
+                        ? 'Deactivating…'
+                        : 'Set Inactive'}
+                    </button>
+                  )}
                   <button className="btn btn-outline-primary btn-sm" onClick={() => goToOrders(game)}>
                     View Orders
                   </button>
@@ -289,8 +393,10 @@ function ShopGames({ shopId }) {
       <Modal isOpen={modalOpen} toggle={closeModal}>
         <ModalHeader toggle={closeModal}>{editingGame ? 'Edit Game' : 'Schedule Game'}</ModalHeader>
         <ModalBody>
-          <div className="form-group">
-            <label htmlFor="gameNameInput">Game Name</label>
+          <div className="mb-3">
+            <label htmlFor="gameNameInput" className="form-label fw-semibold">
+              Game Name
+            </label>
             <input
               id="gameNameInput"
               className="form-control"
@@ -298,26 +404,37 @@ function ShopGames({ shopId }) {
               onChange={(e) => setGameName(e.target.value)}
               placeholder="Opening Night Giveaway"
             />
+            <div className="form-text">Players see this on the scratcher entry screen.</div>
           </div>
-          <div className="form-group">
-            <label>Start Time</label>
-            <DatePicker
-              showTimeInput
-              dateFormat="MMM d, yyyy h:mm aa"
-              selected={startAt}
-              onChange={(date) => setStartAt(date)}
-              isClearable
-            />
-          </div>
-          <div className="form-group">
-            <label>End Time</label>
-            <DatePicker
-              showTimeInput
-              dateFormat="MMM d, yyyy h:mm aa"
-              selected={endAt}
-              onChange={(date) => setEndAt(date)}
-              isClearable
-            />
+
+          <div className="bg-light border rounded p-3">
+            <p className="fw-semibold mb-2">Schedule Window</p>
+            <div className="row g-3">
+              <div className="col-12 col-md-6">
+                <label className="form-label text-muted">Start Time</label>
+                <DatePicker
+                  className="form-control"
+                  showTimeInput
+                  dateFormat="MMM d, yyyy h:mm aa"
+                  selected={startAt}
+                  onChange={(date) => setStartAt(date)}
+                  isClearable
+                />
+                <div className="form-text">Game activates at this date/time.</div>
+              </div>
+              <div className="col-12 col-md-6">
+                <label className="form-label text-muted">End Time</label>
+                <DatePicker
+                  className="form-control"
+                  showTimeInput
+                  dateFormat="MMM d, yyyy h:mm aa"
+                  selected={endAt}
+                  onChange={(date) => setEndAt(date)}
+                  isClearable
+                />
+                <div className="form-text">Game closes immediately after this.</div>
+              </div>
+            </div>
           </div>
         </ModalBody>
         <ModalFooter>

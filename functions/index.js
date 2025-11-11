@@ -29,21 +29,43 @@ export const remoteScheduledCheck = onSchedule('* * * * *', async () => {
 
   for (const shopDoc of shopsSnap.docs) {
     const gamesSnap = await shopDoc.ref.collection('games').get();
-    const batch = db.batch();
-    let hasUpdates = false;
+    if (gamesSnap.empty) continue;
 
-    gamesSnap.forEach((gameDoc) => {
+    const games = gamesSnap.docs.map((gameDoc) => {
       const gameData = gameDoc.data() || {};
       const startMillis = toMillis(gameData.startAt);
       const endMillis = toMillis(gameData.endAt);
-      const { scheduleStatus, active } = computeState(startMillis, endMillis, now);
+      const computed = computeState(startMillis, endMillis, now);
+      return { gameDoc, gameData, startMillis, computed };
+    });
+
+    const activeGames = games
+      .filter(({ computed }) => computed.active)
+      .sort((a, b) => {
+        const aStart = typeof a.startMillis === 'number' ? a.startMillis : Number.POSITIVE_INFINITY;
+        const bStart = typeof b.startMillis === 'number' ? b.startMillis : Number.POSITIVE_INFINITY;
+        if (aStart !== bStart) return aStart - bStart;
+        return a.gameDoc.id.localeCompare(b.gameDoc.id);
+      });
+
+    const allowedActiveId = activeGames.length ? activeGames[0].gameDoc.id : null;
+
+    const batch = db.batch();
+    let hasUpdates = false;
+
+    games.forEach(({ gameDoc, gameData, computed }) => {
+      const desired = { ...computed };
+      if (allowedActiveId && gameDoc.id !== allowedActiveId && desired.active) {
+        desired.active = false;
+        desired.scheduleStatus = 'inactive';
+      }
 
       const changes = {};
-      if (gameData.scheduleStatus !== scheduleStatus) {
-        changes.scheduleStatus = scheduleStatus;
+      if (gameData.scheduleStatus !== desired.scheduleStatus) {
+        changes.scheduleStatus = desired.scheduleStatus;
       }
-      if (gameData.active !== active) {
-        changes.active = active;
+      if (gameData.active !== desired.active) {
+        changes.active = desired.active;
       }
 
       if (Object.keys(changes).length > 0) {

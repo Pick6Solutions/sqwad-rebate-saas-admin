@@ -590,10 +590,13 @@ function OrdersViewer() {
                                     <strong>Domain:</strong> {shop.shopLink || shop.id}
                                 </p>
                                 <p>
-                                    <strong>Status:</strong>{' '}
-                                    <span className={`badge ${shop.active ? 'badge-success' : 'badge-secondary'}`}>
-                    {shop.active ? 'Active' : 'Inactive'}
-                  </span>
+                                    <strong>Shop Status:</strong>{' '}
+                                    <span
+                                        style={{ color: 'black' }}
+                                        className={`badge ${shop.active ? 'badge-success' : 'badge-secondary'}`}
+                                    >
+                                        {shop.active ? 'Active' : 'Inactive'}
+                                    </span>
                                 </p>
 
                                 {game && (
@@ -603,6 +606,15 @@ function OrdersViewer() {
                                         </p>
                                         <p style={{ marginBottom: 4 }}>
                                             <strong>Schedule:</strong> {fmtDate(game.startAt)} &mdash; {fmtDate(game.endAt)}
+                                        </p>
+                                        <p style={{ marginBottom: 4 }}>
+                                            <strong>Game Status:</strong>{' '}
+                                            <span
+                                                style={{ color: 'black' }}
+                                                className={`badge ${game?.active ? 'badge-success' : 'badge-secondary'}`}
+                                            >
+                                                {game?.active ? 'Active' : 'Inactive'}
+                                            </span>
                                         </p>
                                         {gameStatus && (
                                             <span className={`badge ${gameStatus.className}`}>{gameStatus.label}</span>

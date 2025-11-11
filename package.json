@@ -41,15 +41,14 @@
   },
   "scripts": {
     "start": "PORT=3006 react-scripts start",
-    "start:functions": "firebase use sqwad-rebate-app && env-cmd -f ./.env.development yarn set-env && firebase emulators:start --only functions",
-    "build": "export file_path=./.env && yarn prepare-for-deploy && yarn set-env && firebase deploy --only hosting",
+    "start:functions": "firebase use sqwad-rebate-app && env-cmd -f ./.env.development firebase emulators:start --only functions",
+    "build": "export file_path=./.env && yarn deploy-default",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject",
-    "set-env": "node setEnv.js",
-    "deploy-default": "yarn prepare-for-deploy && yarn set-env && firebase deploy --only hosting && yarn deploy-default-functions",
+    "deploy-default": "yarn prepare-for-deploy && firebase deploy --only hosting && yarn deploy-default-functions",
     "prepare-for-deploy": "env-cmd -f $file_path -x react-scripts build && yarn set-project && yarn set-project",
     "set-project": "env-cmd -f $file_path -x firebase use \\$REACT_APP_FIREBASE_PROJECT_ID && env-cmd -f $file_path -x firebase functions:config:set envvariables.database=\\$REACT_APP_FIREBASE_DATABASE",
-    "deploy-default-functions": "env-cmd -f $file_path yarn set-env && firebase deploy --only functions:remoteScheduledCheck,functions:api",
+    "deploy-default-functions": "env-cmd -f $file_path firebase deploy --only functions:remoteScheduledCheck",
     "build:dev": "export file_path=./.env.development && yarn deploy-default"
   },
   "browserslist": {

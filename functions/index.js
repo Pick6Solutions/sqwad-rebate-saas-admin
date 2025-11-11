@@ -1,11 +1,5 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-
-if (admin.apps.length === 0) {
-  admin.initializeApp();
-}
-
-const firestore = admin.firestore();
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { db } from './firebase.js';
 
 function toMillis(value) {
   if (!value) return null;
@@ -29,13 +23,13 @@ function computeState(startMillis, endMillis, now) {
   return { scheduleStatus: 'completed', active: false };
 }
 
-exports.syncGameScheduleStatuses = functions.pubsub.schedule('* * * * *').onRun(async () => {
+export const remoteScheduledCheck = onSchedule('* * * * *', async () => {
   const now = Date.now();
-  const shopsSnap = await firestore.collection('shops').get();
+  const shopsSnap = await db.collection('shops').get();
 
   for (const shopDoc of shopsSnap.docs) {
     const gamesSnap = await shopDoc.ref.collection('games').get();
-    const batch = firestore.batch();
+    const batch = db.batch();
     let hasUpdates = false;
 
     gamesSnap.forEach((gameDoc) => {
